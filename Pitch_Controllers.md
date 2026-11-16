@@ -24,6 +24,26 @@ del archivo son correctos.
 | Smart Tagging | no usado: no tiene equivalente en los datos de entrenamiento, así que su peso no se podía validar |
 | Vídeo y tracking de broadcast | no usados |
 
+### Cómo fluyen los datos y qué se publica
+
+| dato | origen | para qué se usa | dónde vive | ¿en el repo público? |
+|---|---|---|---|---|
+| `BAR-ATH_tactical_atd.txt` + `.xml` | paquete de datos oficial del reto | única entrada del partido: jugadores, equipo de cada slot y balón | `data/tactical/` (o `$MTAH_DATA_DIR/tactical/`) | **no** |
+| `cache/atd.npz` | se genera a partir de los dos archivos anteriores (`src/target_inputs.py`) | el mismo ATD en metros, para no releer el `.txt` | `cache/` | **no** (derivado del dato del reto) |
+| Partidos IDSSE (XML de DFL) | descarga automática de `pysport/idsse-data`, revisión fija `a715a38d` | entrenamiento y validación | `external/raw/` | no (son 2.5 GB y se descargan solos) |
+| Tablas de características IDSSE | se generan a partir de los XML anteriores | entrenamiento | `cache/` | no (regenerables) |
+| GT público de 5 min | repositorio público del reto (`evaluation/gt/`) | solo `run.py public` | `reference/` | sí (ya es público) |
+| CSV de posesión | salida de `run.py predict` | la entrega | `prediction/` | sí |
+
+El flujo es: `data/tactical/` → `cache/atd.npz` → características → modelo entrenado solo con IDSSE
+→ decodificador → `prediction/Pitch_Controllers.csv`. El modelo se reentrena en cada ejecución de
+`predict` (no se guarda ningún modelo entrenado); por eso el repositorio solo contiene código.
+
+**Por qué los datos del reto no están en el repositorio:** el reglamento prohíbe redistribuirlos
+(«Do not redistribute the data», incluido subirlos a un repositorio público) y publicar derivados
+que los reconstruyan. Por eso `.gitignore` excluye `data/` y `cache/`. Quien revise el proyecto
+ya tiene el paquete oficial: basta con copiar los dos archivos del ATD en `data/tactical/`.
+
 ## 3. Datos de entrenamiento
 
 * IDSSE — 7 partidos (J03WMX, J03WN1, J03WOH, J03WOY, J03WPY, J03WQQ, J03WR9), archivos de
@@ -106,10 +126,46 @@ Los parámetros del decodificador se eligieron sobre las mismas predicciones fue
 penalización vivo/muerto 40); los valores vecinos quedan a ±0.002. La fusión con las detecciones
 propias del balón se descartó antes de modelar (ver §2).
 
-Chequeo de sanidad sobre los 5 minutos públicos, ejecutado una sola vez sobre el archivo final y
-**no usado para ninguna decisión**: spellF1 0.629, macroF1 0.822, exactitud 0.859 (pipeline
-anterior: 0.322 / 0.591 / 0.656). En el partido completo el archivo tiene 259 posesiones con una
-media de 14.3 s.
+### Chequeo con el GT público (5 minutos, 7 500 frames)
+
+Se ejecuta con `python run.py public`, que llama a la función de evaluación oficial completa
+(`possession_metrics.evaluate`, la misma que usa `run_evaluation.py`) con 1 000 remuestreos de
+bootstrap y semilla fija. El informe íntegro queda en `reports/PUBLIC_SANITY_CHECK.json`. Se
+calculó sobre el archivo final y **no se usó para ninguna decisión**: con 17 posesiones el ruido
+es enorme (intervalo del spellF1 de 0.41 a 0.81) y el reglamento prohíbe ajustar con él.
+
+| métrica | valor |
+|---|---|
+| **spellF1** (métrica del ranking) | **0.6286** (bootstrap 5–95 %: 0.4143 – 0.8122) |
+| spellF1 por umbral de IoU 0.3 / 0.4 / 0.5 / 0.6 / 0.7 | 0.714 / 0.714 / 0.643 / 0.571 / 0.500 |
+| posesiones con IoU 0.5 | 9 encontradas, 8 perdidas, 2 de más (precisión 0.818, recall 0.529) |
+| **macroF1** (primer desempate) | **0.8222** (bootstrap 5–95 %: 0.6236 – 0.8910) |
+| F1 por clase H / A / D | 0.885 / 0.896 / 0.686 |
+| precisión / recall de D | 1.000 / 0.522 |
+| exactitud / kappa de Cohen | 0.859 / 0.770 |
+| F1 de transiciones a ±12 / ±25 frames | 0.235 / 0.412 |
+| latencia de transiciones (±25) | media +2.7 frames, mediana +10, p90 de su valor absoluto 16 |
+| posesiones predichas / reales | 11 / 17 |
+| duración media de posesión, predicha / real | 24.5 s / 14.2 s |
+| segmentos predichos / reales (fragmentación) | 15 / 21 (0.71) |
+| F1 balón vivo / muerto | 0.945 |
+| acierto de equipo con el balón vivo | 0.941 |
+| proporción de posesión local, predicha / real | 0.561 / 0.573 (error 0.012) |
+| abstenciones (X) en frames evaluados | 0 |
+
+Matriz de confusión (filas = GT, columnas = predicción) en los frames evaluados:
+
+| | H | A | D |
+|---|---:|---:|---:|
+| **H** | 3 198 | 256 | 0 |
+| **A** | 98 | 2 479 | 0 |
+| **D** | 480 | 222 | 767 |
+
+Lectura: el equipo en posesión se acierta bien, pero el sistema **predice menos posesiones de las
+reales y más largas**, sobre todo porque se pierde parte de los balones muertos (recall de D
+0.52). Es coherente con la validación en IDSSE, donde también predice el 88 % de las posesiones
+reales. Con el pipeline anterior el mismo chequeo daba spellF1 0.322, macroF1 0.591 y exactitud
+0.656. En el partido completo, el archivo final tiene 259 posesiones con una media de 14.3 s.
 
 ## 9. Limitaciones
 

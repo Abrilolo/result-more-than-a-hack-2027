@@ -38,6 +38,12 @@ data/tactical/BAR-ATH_tactical_atd.xml
 
 No se usan el vídeo, la homografía, el Smart Tagging ni el broadcast.
 
+**Los datos del reto no están en este repositorio, a propósito:** el reglamento prohíbe
+redistribuirlos o publicar derivados que los reconstruyan, así que `.gitignore` excluye `data/` y
+`cache/`. Quien revise el proyecto ya tiene el paquete oficial y solo tiene que copiar esos dos
+archivos. El detalle de qué dato se usa, para qué y dónde vive está en
+[Pitch_Controllers.md](Pitch_Controllers.md) (§2).
+
 ## Reproducir (Windows, PowerShell)
 
 ```powershell
