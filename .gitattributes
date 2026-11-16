@@ -1,0 +1,2 @@
+# Saltos de línea LF en cualquier sistema: el CSV debe ser idéntico byte a byte
+* text=auto eol=lf

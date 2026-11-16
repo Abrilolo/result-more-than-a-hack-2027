@@ -1,0 +1,54 @@
+{
+  "csv": "Pitch_Controllers.csv",
+  "sha256": "8c6445b2c71ba1737215c9f168d9edee313605345342cbcbae20a5be49c8a46d",
+  "halves": [
+    {
+      "half": 1,
+      "frames": 79467,
+      "share": {
+        "H": 0.3699,
+        "A": 0.2182,
+        "D": 0.4119
+      }
+    },
+    {
+      "half": 2,
+      "frames": 79390,
+      "share": {
+        "H": 0.3374,
+        "A": 0.2406,
+        "D": 0.422
+      }
+    }
+  ],
+  "decoder": {
+    "min_poss_s": 2.0,
+    "min_dead_s": 1.0,
+    "pen_team": 12.0,
+    "pen_dead": 40.0,
+    "temp": 1.0
+  },
+  "control_s": 2.0,
+  "aug_draws": 3,
+  "train_stride": 5,
+  "feature_variant": "v2",
+  "xgb": {
+    "n_estimators": 900,
+    "max_depth": 8,
+    "learning_rate": 0.04,
+    "subsample": 0.8,
+    "colsample_bytree": 0.7,
+    "min_child_weight": 10,
+    "reg_lambda": 2.0
+  },
+  "seed": 2026,
+  "training_matches": [
+    "J03WMX",
+    "J03WN1",
+    "J03WOH",
+    "J03WOY",
+    "J03WPY",
+    "J03WQQ",
+    "J03WR9"
+  ]
+}

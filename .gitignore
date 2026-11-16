@@ -1,0 +1,7 @@
+# Datos del reto: licenciados, nunca se publican
+data/
+# Regenerables
+cache/
+external/raw/
+.venv/
+__pycache__/

@@ -1,0 +1,22 @@
+{
+  "protocol": "leave-one-match-out sobre 7 partidos IDSSE, degradados al ruido del reto, etiquetas = posesión DFL con la regla de posesión controlada",
+  "decoder": {
+    "min_poss_s": 2.0,
+    "min_dead_s": 1.0,
+    "pen_team": 12.0,
+    "pen_dead": 40.0,
+    "temp": 1.0
+  },
+  "spell_f1": 0.6837,
+  "acc": 0.9130635574799023,
+  "pred_per_gt": 0.875520552896333,
+  "per_match": {
+    "J03WMX": 0.6739,
+    "J03WN1": 0.6456,
+    "J03WOH": 0.7051,
+    "J03WOY": 0.6844,
+    "J03WPY": 0.7101,
+    "J03WQQ": 0.6586,
+    "J03WR9": 0.7082
+  }
+}

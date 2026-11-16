@@ -1,0 +1,8 @@
+{
+  "spell_f1_mean": 0.6285714285714284,
+  "macro_f1": 0.8222033230708767,
+  "accuracy": 0.8592,
+  "n_gt_spells": 17,
+  "n_pred_spells": 11,
+  "n_abstain_on_graded": 0
+}
