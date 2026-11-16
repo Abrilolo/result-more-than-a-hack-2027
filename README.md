@@ -21,7 +21,7 @@ Pipeline replicable que, a partir del tracking automático oficial del reto (ATD
 | `data/tactical/` | datos del reto (privados, en `.gitignore`, nunca se publican) |
 | `reference/` | GT público de 5 min (solo comprobación de formato/alineación) |
 | `prediction/` | CSV final + `MANIFEST.json` (hash, configuración) |
-| `reports/` | validación IDSSE y chequeo público |
+| `reports/` | validación IDSSE y chequeo público (informe completo del evaluador oficial) |
 
 `cache/` y `external/raw/` se regeneran solos: el ATD se convierte desde los archivos oficiales
 y los partidos IDSSE se descargan desde una revisión fijada.
@@ -44,7 +44,7 @@ No se usan el vídeo, la homografía, el Smart Tagging ni el broadcast.
 & .\setup.ps1
 & .\.venv\Scripts\python.exe .\run.py predict    # entrena con IDSSE y escribe el CSV
 & .\.venv\Scripts\python.exe .\run.py validate   # evidencia de selección (IDSSE LOMO)
-& .\.venv\Scripts\python.exe .\run.py public     # chequeo de sanidad, 5 min públicos
+& .\.venv\Scripts\python.exe .\run.py public     # chequeo con el GT público: todas las métricas oficiales
 ```
 
 `predict` es determinista: mismo CSV byte a byte (el hash queda en `prediction/MANIFEST.json`).

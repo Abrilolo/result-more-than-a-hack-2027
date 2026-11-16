@@ -9,6 +9,7 @@ import hashlib
 import json
 import sys
 sys.dont_write_bytecode = True
+sys.stdout.reconfigure(encoding='utf-8')
 from pathlib import Path
 
 import numpy as np
@@ -25,6 +26,7 @@ import decode  # noqa: E402
 OUT = ROOT / 'prediction'
 CSV = OUT / f'{config.TEAM}.csv'
 PUBLIC_GT = ROOT / 'reference' / 'BAR-ATH_possession_gt_public.csv'
+PUBLIC_BOOTSTRAP = 1000
 LABELS = np.array(list('HADX'))
 
 
@@ -73,12 +75,29 @@ def validate():
 def public():
     gt = pm.label_codes(pm.read_label_csv(PUBLIC_GT))
     pred = pm.label_codes(pm.read_label_csv(CSV))
-    r = pm.evaluate(gt, pred, bootstrap_n=0)
-    keys = ['spell_f1_mean', 'macro_f1', 'accuracy', 'n_gt_spells', 'n_pred_spells', 'n_abstain_on_graded']
-    out = {k: r[k] for k in keys}
+    # Informe completo del evaluador oficial, con el mismo bootstrap (semilla fija) que
+    # run_evaluation.py --bootstrap 1000. Solo se quitan las listas de transiciones emparejadas.
+    r = pm.evaluate(gt, pred, bootstrap_n=PUBLIC_BOOTSTRAP)
+    for t in r['transitions'].values():
+        for key in ('pairs', 'missed', 'spurious'):
+            t.pop(key, None)
+    out = {'alcance': 'GT público de 5 min (7500 frames): solo comprobación, no se usa para decidir nada',
+           'csv': CSV.name, **r}
     (ROOT / 'reports').mkdir(exist_ok=True)
-    (ROOT / 'reports' / 'PUBLIC_SANITY_CHECK.json').write_text(json.dumps(out, indent=2), encoding='utf-8', newline='\n')
-    print(json.dumps(out, indent=2))
+    (ROOT / 'reports' / 'PUBLIC_SANITY_CHECK.json').write_text(
+        json.dumps(out, indent=2, ensure_ascii=False, default=float), encoding='utf-8', newline='\n')
+    print(f"spellF1 {r['spell_f1_mean']:.4f}  (bootstrap 5-95 %: {r['spell_bootstrap_low']:.4f} .. "
+          f"{r['spell_bootstrap_high']:.4f})")
+    print(f"macroF1 {r['macro_f1']:.4f}  (bootstrap 5-95 %: {r['bootstrap_low']:.4f} .. {r['bootstrap_high']:.4f})"
+          f"  exactitud {r['accuracy']:.4f}  kappa {r['kappa']:.4f}")
+    print('F1 por clase', {k: round(v['f1'], 4) for k, v in r['per_class'].items()})
+    print(f"posesiones {r['n_pred_spells']} predichas / {r['n_gt_spells']} reales, duración media "
+          f"{r['mean_spell_duration_s']:.1f} s / {r['gt_mean_spell_duration_s']:.1f} s")
+    for tau, t in r['transitions'].items():
+        print(f"transiciones ±{tau} frames: F1 {t['f1']:.4f}")
+    print(f"vivo/muerto F1 {r['alive_dead_f1']:.4f}  equipo (GT vivo) {r['team_acc_gt_alive']:.4f}  "
+          f"fragmentación {r['fragmentation']:.2f}  abstenciones {r['n_abstain_on_graded']}")
+    print('Informe completo: reports/PUBLIC_SANITY_CHECK.json')
 
 
 if __name__ == '__main__':
