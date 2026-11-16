@@ -23,6 +23,7 @@ import pipeline as pl  # noqa: E402
 import possession_metrics as pm  # noqa: E402
 import target_inputs as ti  # noqa: E402
 import decode  # noqa: E402
+import restarts  # noqa: E402
 
 OUT = ROOT / 'prediction'
 CSV = OUT / f'{config.TEAM}.csv'
@@ -53,15 +54,18 @@ def predict():
         assert list(x.columns) == columns
         prob = pl.predict(model, x)
         pred = decode.decode_half(prob, prior, config.DECODER)
+        pred, rules = restarts.apply(pred, half, half['kickoff_tag'], **config.RULES)
         labels[half['start']:half['end'] + 1] = LABELS[pred]
-        stats.append({'half': half['half'], 'frames': len(pred),
+        if rules.get('kickoff_index') is not None:
+            rules['kickoff_frame'] = half['start'] + rules['kickoff_index']
+        stats.append({'half': half['half'], 'frames': len(pred), 'reglas': rules,
                       'share': {k: round(float((pred == i).mean()), 4) for i, k in enumerate('HAD')}})
     OUT.mkdir(exist_ok=True)
     pd.DataFrame({'frame': np.arange(ti.N_FRAMES), 'label': labels}).to_csv(CSV, index=False, lineterminator='\n')
     assert pm.validate_submission(pm.read_label_csv(CSV), ti.N_FRAMES) is None
     manifest = {'csv': CSV.name, 'sha256': sha(CSV), 'halves': stats, 'decoder': config.DECODER,
                 'control_s': config.CONTROL_S, 'aug_draws': config.AUG_DRAWS, 'train_stride': config.TRAIN_STRIDE,
-                'feature_variant': config.FEATURE_VARIANT, 'xgb': config.XGB, 'seed': config.SEED,
+                'feature_variant': config.FEATURE_VARIANT, 'rules': config.RULES, 'xgb': config.XGB, 'seed': config.SEED,
                 'training_matches': pl.idsse.MATCHES,
                 'model_sha256': json.loads((pl.MODEL / 'MODEL.json').read_text(encoding='utf-8'))['model_sha256']}
     (OUT / 'MANIFEST.json').write_text(json.dumps(manifest, indent=2), encoding='utf-8', newline='\n')
@@ -71,7 +75,7 @@ def predict():
 def validate():
     parts = pl.idsse_tables(pl.ball_masks())
     probs, prior = pl.oof(parts)
-    result = pl.score(parts, probs, prior, config.DECODER)
+    result = pl.score(parts, probs, prior, config.DECODER, pl.idsse_rule_inputs(pl.ball_masks()))
     report = {'protocol': 'leave-one-match-out sobre 7 partidos IDSSE, degradados al ruido del reto, '
                           'etiquetas = posesión DFL con la regla de posesión controlada',
               'decoder': config.DECODER, **result}
@@ -111,4 +115,8 @@ def public():
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('command', choices=['train', 'predict', 'validate', 'public'])
-    {'train': train, 'predict': predict, 'validate': validate, 'public': public}[parser.parse_args().command]()
+    command = parser.parse_args().command
+    try:
+        {'train': train, 'predict': predict, 'validate': validate, 'public': public}[command]()
+    except FileNotFoundError as error:
+        sys.exit(f'ERROR: {error}')

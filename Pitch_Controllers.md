@@ -19,15 +19,16 @@ del archivo son correctos.
 |---|---|
 | ATD táctico oficial (`BAR-ATH_tactical_atd.txt` + `.xml`: jugadores, equipo de cada slot, balón) | **usado** en todas las características; `src/target_inputs.py` lo pasa de coordenadas 0–1 a metros (105.3 × 68). El balón está presente en el 59 % de los frames evaluados |
 | Homografía táctica | no usada: el ATD ya está en coordenadas del campo |
-| Smart Tagging | no usado: no tiene equivalente en los datos de entrenamiento, así que su peso no se podía validar |
+| Smart Tagging (`BAR-ATH_tactical_smart_tagging.xml`) | **solo** la hora de la etiqueta automática "Kick Off (Start)", como ancla para buscar el saque inicial de cada parte (§7). El resto no se usa: no tiene equivalente en los datos de entrenamiento, así que su peso no se podía validar |
 | Vídeo y tracking de broadcast | no usados |
 
 ### Cómo fluyen los datos y qué se publica
 
 | dato | origen | para qué se usa | dónde vive | ¿en el repo público? |
 |---|---|---|---|---|
-| `BAR-ATH_tactical_atd.txt` + `.xml` | paquete de datos oficial del reto | única entrada del partido: jugadores, equipo de cada slot y balón | `data/tactical/` (o `$MTAH_DATA_DIR/tactical/`) | **no** |
-| `cache/atd.npz` | se genera a partir de los dos archivos anteriores (`src/target_inputs.py`) | el mismo ATD en metros, para no releer el `.txt` | `cache/` | **no** (derivado del dato del reto) |
+| `BAR-ATH_tactical_atd.txt` + `.xml` | paquete de datos oficial del reto | entrada principal del partido: jugadores, equipo de cada slot y balón | `data/tactical/` (o `$MTAH_DATA_DIR/tactical/`) | **no** |
+| `BAR-ATH_tactical_smart_tagging.xml` | paquete de datos oficial del reto | solo la hora de "Kick Off (Start)" como ancla del saque inicial | `data/tactical/` | **no** |
+| `cache/atd.npz` | se genera a partir de los dos archivos del ATD (`src/target_inputs.py`) | el mismo ATD en metros, para no releer el `.txt` | `cache/` | **no** (derivado del dato del reto) |
 | Partidos IDSSE originales (XML de DFL) | descarga automática de `pysport/idsse-data`, revisión fija `a715a38d` | origen de los datos de entrenamiento | `external/raw/` | no (2.5 GB; solo hacen falta si se borra `external/idsse/`) |
 | Partidos IDSSE procesados | `src/idsse.py` a partir de los XML anteriores: 25 Hz, metros, etiquetas DFL | entrenamiento y validación | `external/idsse/` (103 MB) | **sí** (CC BY 4.0, con atribución) |
 | Tablas de características IDSSE | IDSSE procesado, degradado con la máscara de disponibilidad del balón del reto | entrenamiento | `cache/` | no (llevan un patrón derivado del reto; se regeneran en unos minutos) |
@@ -40,7 +41,7 @@ El flujo es:
 * `train`: `external/idsse/` + máscara del balón de `data/tactical/` → características degradadas
   → XGBoost → `model/`.
 * `predict`: `data/tactical/` → `cache/atd.npz` → características → `model/` → decodificador →
-  `prediction/Pitch_Controllers.csv`.
+  reglas de balón parado (con el ancla del Smart Tagging) → `prediction/Pitch_Controllers.csv`.
 
 El repositorio publica el modelo entrenado y los partidos IDSSE procesados, así que se puede
 regenerar el CSV con nuestro modelo exacto (`predict`) o comprobar el entrenamiento desde cero
@@ -49,7 +50,8 @@ regenerar el CSV con nuestro modelo exacto (`predict`) o comprobar el entrenamie
 **Por qué los datos del reto no están en el repositorio:** el reglamento prohíbe redistribuirlos
 («Do not redistribute the data», incluido subirlos a un repositorio público) y publicar derivados
 que los reconstruyan. Por eso `.gitignore` excluye `data/` y `cache/`. Quien revise el proyecto
-ya tiene el paquete oficial: basta con copiar los dos archivos del ATD en `data/tactical/`.
+ya tiene el paquete oficial: basta con copiar los dos archivos del ATD y el del Smart Tagging en
+`data/tactical/`.
 
 ## 3. Datos de entrenamiento
 
@@ -112,6 +114,38 @@ mejor frame dentro de ±5 frames usando la evidencia a 25 Hz. No hay abstención
   racha viva.
 * Nunca se predice a quién pertenece un balón muerto (siempre D).
 
+### Reglas de balón parado (`src/restarts.py`)
+
+Se aplican después del decodificador y solo pueden convertir frames en D. Son reglas del juego
+detectadas por algoritmo sobre el tracking; no hay ningún frame ni constante propios de este
+partido.
+
+**Saque inicial de cada parte.** Antes del saque el balón no está en juego. El saque se detecta
+por la formación: los dos equipos con al menos el 85 % de sus jugadores visibles en su propio
+campo, al menos 18 jugadores visibles y el grupo casi quieto (velocidad media < 1.2 m/s) durante
+3 s o más; el saque es el instante en que esa formación se rompe. Solo se buscan formaciones a
+±20 s de la etiqueta automática "Kick Off (Start)" del Smart Tagging. El balón ATD no se usa aquí
+porque antes del saque sigue balones de calentamiento.
+
+* En el reto: en la 1.ª parte la evaluación empieza ya con el saque, así que no cambia nada; en la
+  2.ª el saque se detecta en el frame 113 702 y los 1 843 frames previos que el modelo daba como
+  juego vivo pasan a D (desaparecen 8 posesiones falsas).
+* Sin el ancla la regla no se aplica: probada solo con tracking en IDSSE (cuyas partes empiezan
+  en el saque), confundió una formación a los 138 s con un saque y borró 1 471 frames de juego.
+  Por eso no se puede validar en IDSSE y queda como regla de definición, no de ajuste.
+
+**Balón parado en el área (córner o falta cercana).** La firma es el área grande con al menos 8
+jugadores, al menos 2 dentro del área chica y el grupo casi quieto (< 1 m/s) durante 2 s o más;
+si el balón se ve a más de 35 m de esa portería, no cuenta. No se exige ver el balón en la
+esquina porque el ATD lo pierde casi siempre junto al banderín, y el lanzador a menudo tampoco
+aparece.
+
+* En IDSSE esta firma es balón muerto el 99.8 % de las veces (92 tramos en los 7 partidos).
+* En el reto detecta 20 tramos, entre ellos 11 de los 12 córners que etiqueta el Smart Tagging
+  (fuente automática independiente).
+* Efecto: en IDSSE no cambia el spellF1 (0.6837) y en el reto cambia 13 frames, porque el modelo
+  ya marcaba D casi todos esos tramos. Se mantiene como garantía explícita.
+
 ## 8. Validación (evidencia de selección)
 
 Protocolo: leave-one-match-out sobre los 7 partidos de IDSSE (se entrena con 6, se decodifica y
@@ -145,18 +179,18 @@ es enorme (intervalo del spellF1 de 0.41 a 0.81) y el reglamento prohíbe ajusta
 | **spellF1** (métrica del ranking) | **0.6286** (bootstrap 5–95 %: 0.4143 – 0.8122) |
 | spellF1 por umbral de IoU 0.3 / 0.4 / 0.5 / 0.6 / 0.7 | 0.714 / 0.714 / 0.643 / 0.571 / 0.500 |
 | posesiones con IoU 0.5 | 9 encontradas, 8 perdidas, 2 de más (precisión 0.818, recall 0.529) |
-| **macroF1** (primer desempate) | **0.8222** (bootstrap 5–95 %: 0.6236 – 0.8910) |
-| F1 por clase H / A / D | 0.885 / 0.896 / 0.686 |
-| precisión / recall de D | 1.000 / 0.522 |
-| exactitud / kappa de Cohen | 0.859 / 0.770 |
-| F1 de transiciones a ±12 / ±25 frames | 0.235 / 0.412 |
-| latencia de transiciones (±25) | media +2.7 frames, mediana +10, p90 de su valor absoluto 16 |
+| **macroF1** (primer desempate) | **0.8254** (bootstrap 5–95 %: 0.6259 – 0.8960) |
+| F1 por clase H / A / D | 0.885 / 0.898 / 0.694 |
+| precisión / recall de D | 1.000 / 0.531 |
+| exactitud / kappa de Cohen | 0.861 / 0.773 |
+| F1 de transiciones a ±12 / ±25 frames | 0.294 / 0.412 |
+| latencia de transiciones (±25) | media +4.6 frames, mediana +10, p90 de su valor absoluto 15 |
 | posesiones predichas / reales | 11 / 17 |
-| duración media de posesión, predicha / real | 24.5 s / 14.2 s |
+| duración media de posesión, predicha / real | 24.4 s / 14.2 s |
 | segmentos predichos / reales (fragmentación) | 15 / 21 (0.71) |
-| F1 balón vivo / muerto | 0.945 |
+| F1 balón vivo / muerto | 0.946 |
 | acierto de equipo con el balón vivo | 0.941 |
-| proporción de posesión local, predicha / real | 0.561 / 0.573 (error 0.012) |
+| proporción de posesión local, predicha / real | 0.562 / 0.573 (error 0.011) |
 | abstenciones (X) en frames evaluados | 0 |
 
 Matriz de confusión (filas = GT, columnas = predicción) en los frames evaluados:
@@ -165,12 +199,14 @@ Matriz de confusión (filas = GT, columnas = predicción) en los frames evaluado
 |---|---:|---:|---:|
 | **H** | 3 198 | 256 | 0 |
 | **A** | 98 | 2 479 | 0 |
-| **D** | 480 | 222 | 767 |
+| **D** | 480 | 209 | 780 |
 
 Lectura: el equipo en posesión se acierta bien, pero el sistema **predice menos posesiones de las
 reales y más largas**, sobre todo porque se pierde parte de los balones muertos (recall de D
-0.52). Es coherente con la validación en IDSSE, donde también predice el 88 % de las posesiones
-reales. En el partido completo, el archivo final tiene 259 posesiones con una media de 14.3 s.
+0.53). Es coherente con la validación en IDSSE, donde también predice el 88 % de las posesiones
+reales. En el partido completo, el archivo final tiene 251 posesiones con una media de 14.5 s y
+un 42.9 % de balón muerto. La ventana pública no incluye el inicio de la 2.ª parte, así que la
+regla del saque inicial (§7) apenas se nota en estas cifras.
 
 ## 9. Limitaciones
 
@@ -185,7 +221,8 @@ reales. En el partido completo, el archivo final tiene 259 posesiones con una me
 
 ## 10. Reproducción
 
-Ver `README.md`. Copiar `BAR-ATH_tactical_atd.txt` y `.xml` del paquete oficial en
+Ver `README.md`. Copiar `BAR-ATH_tactical_atd.txt`, `BAR-ATH_tactical_atd.xml` y
+`BAR-ATH_tactical_smart_tagging.xml` del paquete oficial en
 `data/tactical/` y ejecutar `setup.ps1`. Después:
 
 * `python run.py predict` regenera el CSV con el modelo publicado en `model/` (unos 30 s).

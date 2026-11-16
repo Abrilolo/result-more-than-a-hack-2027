@@ -16,12 +16,13 @@ import features  # noqa: E402
 import idsse  # noqa: E402
 import labels  # noqa: E402
 import possession_metrics as pm  # noqa: E402
+import restarts  # noqa: E402
 
 CACHE = ROOT / 'cache'
 RAW = ROOT / 'external' / 'raw'
 IDSSE = ROOT / 'external' / 'idsse'   # partidos IDSSE ya procesados (se publican en el repo)
 MODEL = ROOT / 'model'
-from config import AUG_DRAWS, CONTROL_S, TRAIN_STRIDE, XGB, SEED, FEATURE_VARIANT  # noqa: E402
+from config import AUG_DRAWS, CONTROL_S, RULES, TRAIN_STRIDE, XGB, SEED, FEATURE_VARIANT  # noqa: E402
 
 
 def idsse_tables(ball_masks, variant=FEATURE_VARIANT, draws=None):
@@ -49,6 +50,16 @@ def idsse_tables(ball_masks, variant=FEATURE_VARIANT, draws=None):
                     np.savez_compressed(path, x=x.to_numpy(np.float32),
                                         columns=np.array(list(x.columns), dtype='U'), y=y)
                 out.append({'match': match, 'half': half['half'], 'draw': draw, 'x': x, 'y': y})
+    return out
+
+
+def idsse_rule_inputs(ball_masks):
+    """Las mismas partes IDSSE degradadas que se puntúan (degradación 0), para aplicarles las
+    reglas de balón parado en la validación exactamente como se aplican al reto."""
+    out = {}
+    for mi, match in enumerate(idsse.MATCHES):
+        for half in idsse.load(IDSSE, RAW, match):
+            out[(match, half['half'])] = domain.degrade(half, ball_masks, SEED + 100 * mi + half['half'])
     return out
 
 
@@ -90,13 +101,15 @@ def oof(parts):
     return probs, prior
 
 
-def score(parts, probs, prior, params):
+def score(parts, probs, prior, params, rule_inputs=None, rules=None):
     """spellF1 oficial por partido IDSSE (las dos partes juntas, respetando el descanso), promediado entre partidos."""
     by_match = {}
     for p in parts:
         if p['draw']:
             continue
         pred = decode.decode_half(probs[(p['match'], p['half'])], prior, params)
+        if rule_inputs is not None:
+            pred, _ = restarts.apply(pred, rule_inputs[(p['match'], p['half'])], **(rules or RULES))
         by_match.setdefault(p['match'], []).append((p['y'].astype(np.int64), pred.astype(np.int64)))
     per_match, ratios, accs = {}, [], []
     for match, halves in by_match.items():
@@ -115,10 +128,15 @@ def target_halves():
     """Partes evaluadas del reto a partir del ATD automático oficial (jugadores con equipo, balón)."""
     import target_inputs as ti
     atd = ti.load_atd(CACHE)
+    tagging = ti.smart_tagging_path()
+    tags = [round(t * 25) for t in restarts.kickoff_tags(tagging)]
     out = []
     for half, a, b in ti.HALVES:
+        # etiqueta automática de saque inicial que cae en esta parte (o justo antes de su inicio)
+        near = [t - a for t in tags if a - 25 * 60 <= t <= b]
         out.append({'half': half, 'start': a, 'end': b, 'players': atd['players'][a:b + 1],
-                    'team': atd['team'], 'ball': atd['ball'][a:b + 1], 'pitch': ti.PITCH})
+                    'team': atd['team'], 'ball': atd['ball'][a:b + 1], 'pitch': ti.PITCH,
+                    'kickoff_tag': near[0] if near else None})
     return out
 
 

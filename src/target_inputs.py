@@ -1,9 +1,13 @@
 """Entradas del reto: el ATD automático oficial (jugadores con equipo, balón).
 
-Lee los dos archivos del paquete de datos oficial, sin ninguna etiqueta:
+Lee tres archivos del paquete de datos oficial, sin ninguna etiqueta:
 
     data/tactical/BAR-ATH_tactical_atd.xml   metadatos: equipo de cada slot de tracking
     data/tactical/BAR-ATH_tactical_atd.txt   posiciones normalizadas 0-1 por frame
+
+y el Smart Tagging automático (`BAR-ATH_tactical_smart_tagging.xml`), del que solo se toma la
+hora de la etiqueta "Kick Off (Start)" como ancla para buscar el saque inicial. Si falta alguno
+de los tres, se detiene con un mensaje que dice dónde copiarlo (nunca sigue sin él).
 
 `MTAH_DATA_DIR` (la misma variable que usa el repositorio del reto) permite apuntar a otra
 carpeta que contenga `tactical/`. El resultado se guarda en `cache/atd.npz`; coordenadas en
@@ -26,13 +30,20 @@ def data_dir():
     return Path(os.environ.get('MTAH_DATA_DIR', ROOT / 'data'))
 
 
+INPUT_FILES = (f'{GAME}_tactical_atd.txt', f'{GAME}_tactical_atd.xml', f'{GAME}_tactical_smart_tagging.xml')
+
+
+def _required(name):
+    path = data_dir() / 'tactical' / name
+    if not path.exists():
+        raise FileNotFoundError(
+            f'Falta {path}.\nCopia en {data_dir() / "tactical"} estos archivos del paquete de datos oficial '
+            f'(o define MTAH_DATA_DIR con la carpeta que contiene tactical/): ' + ', '.join(INPUT_FILES))
+    return path
+
+
 def atd_paths():
-    tactical = data_dir() / 'tactical'
-    meta, raw = tactical / f'{GAME}_tactical_atd.xml', tactical / f'{GAME}_tactical_atd.txt'
-    for path in (meta, raw):
-        if not path.exists():
-            raise FileNotFoundError(f'Falta {path}: copia ahí el archivo del paquete de datos oficial')
-    return meta, raw
+    return _required(f'{GAME}_tactical_atd.xml'), _required(f'{GAME}_tactical_atd.txt')
 
 
 def team_of_each_slot(meta_path):
@@ -77,3 +88,7 @@ def load_atd(cache_dir):
     with np.load(path, allow_pickle=False) as z:
         return {'players': z['players'].astype(np.float32), 'team': z['team'].astype(np.int8),
                 'ball': z['ball'].astype(np.float32)}
+
+
+def smart_tagging_path():
+    return _required(f'{GAME}_tactical_smart_tagging.xml')

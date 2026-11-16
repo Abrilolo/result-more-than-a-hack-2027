@@ -1,23 +1,34 @@
 {
   "csv": "Pitch_Controllers.csv",
-  "sha256": "8c6445b2c71ba1737215c9f168d9edee313605345342cbcbae20a5be49c8a46d",
+  "sha256": "a3601e87c2bd4d5e939008486a59ce670506500bb1d127c11452c74a42a0ca79",
   "halves": [
     {
       "half": 1,
       "frames": 79467,
+      "reglas": {
+        "kickoff_index": null,
+        "set_piece_frames": 1625,
+        "set_pieces": 12
+      },
       "share": {
         "H": 0.3699,
-        "A": 0.2182,
-        "D": 0.4119
+        "A": 0.218,
+        "D": 0.412
       }
     },
     {
       "half": 2,
       "frames": 79390,
+      "reglas": {
+        "kickoff_index": 2894,
+        "set_piece_frames": 1584,
+        "set_pieces": 8,
+        "kickoff_frame": 113702
+      },
       "share": {
-        "H": 0.3374,
-        "A": 0.2406,
-        "D": 0.422
+        "H": 0.3185,
+        "A": 0.2361,
+        "D": 0.4454
       }
     }
   ],
@@ -32,6 +43,10 @@
   "aug_draws": 3,
   "train_stride": 5,
   "feature_variant": "v2",
+  "rules": {
+    "kickoff": true,
+    "set_pieces": true
+  },
   "xgb": {
     "n_estimators": 900,
     "max_depth": 8,

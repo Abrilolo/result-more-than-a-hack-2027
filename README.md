@@ -16,6 +16,7 @@ Pipeline replicable que, a partir del tracking automático oficial del reto (ATD
 | `src/domain.py` | degradación de IDSSE para que se parezca al tracking automático del reto |
 | `src/features.py` | extractor de características común (IDSSE y reto) |
 | `src/decode.py` | decodificador HSMM (duración mínima + penalizaciones de cambio) |
+| `src/restarts.py` | reglas de balón parado: saque inicial de cada parte y balón parado en el área |
 | `src/pipeline.py` | entrenamiento, validación leave-one-match-out, inferencia |
 | `src/possession_metrics.py` | copia literal del evaluador oficial |
 | `model/` | **modelo entrenado** (`model.ubj`) y `MODEL.json` (proporción de clases, columnas, hash) |
@@ -31,24 +32,41 @@ fijada y se vuelven a procesar.
 
 ## Datos necesarios
 
-Del paquete de datos oficial del reto solo se usan dos archivos, que deben estar en
+Del paquete de datos oficial del reto se usan tres archivos, que deben estar en
 `data/tactical/` (o en `$MTAH_DATA_DIR/tactical/`):
 
 ```text
 data/tactical/BAR-ATH_tactical_atd.txt
 data/tactical/BAR-ATH_tactical_atd.xml
+data/tactical/BAR-ATH_tactical_smart_tagging.xml
 ```
 
-No se usan el vídeo, la homografía, el Smart Tagging ni el broadcast.
+Del Smart Tagging solo se toma la hora de la etiqueta "Kick Off (Start)", como ancla para detectar
+el saque inicial de cada parte. No se usan el vídeo, la homografía ni el broadcast.
 
 **Los datos del reto no están en este repositorio, a propósito:** el reglamento prohíbe
 redistribuirlos o publicar derivados que los reconstruyan, así que `.gitignore` excluye `data/` y
-`cache/`. Quien revise el proyecto ya tiene el paquete oficial y solo tiene que copiar esos dos
+`cache/`. Quien revise el proyecto ya tiene el paquete oficial y solo tiene que copiar esos tres
 archivos. Lo que sí se publica es todo lo que generamos a partir de datos públicos: el modelo
 entrenado y los partidos IDSSE procesados. El detalle de qué dato se usa, para qué y dónde vive
 está en [Pitch_Controllers.md](Pitch_Controllers.md) (§2).
 
 ## Reproducir (Windows, PowerShell)
+
+1. Copiar los tres archivos del paquete de datos oficial en `data/tactical/` (la carpeta no viene
+   en el repositorio; hay que crearla). Ajustar `$datos` a donde esté descomprimido el paquete:
+
+```powershell
+$datos = 'C:\ruta\al\paquete\data'
+New-Item -ItemType Directory -Force data\tactical | Out-Null
+Copy-Item "$datos\tactical\BAR-ATH_tactical_atd.txt", "$datos\tactical\BAR-ATH_tactical_atd.xml", "$datos\tactical\BAR-ATH_tactical_smart_tagging.xml" data\tactical\
+```
+
+   También se puede dejar el paquete donde está y apuntar a él: `$env:MTAH_DATA_DIR = $datos`.
+   Si falta alguno de los tres archivos, `run.py` se detiene con un mensaje que dice cuál y dónde
+   copiarlo; nunca genera un CSV sin ellos.
+
+2. Instalar el entorno y generar el CSV:
 
 ```powershell
 & .\setup.ps1

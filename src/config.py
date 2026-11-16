@@ -11,4 +11,5 @@ AUG_DRAWS = 3            # degradaciones independientes de cada parte IDSSE usad
 TRAIN_STRIDE = 5         # una fila de entrenamiento cada 5 frames de cada degradación
 XGB = dict(n_estimators=900, max_depth=8, learning_rate=0.04, subsample=0.8, colsample_bytree=0.7,
            min_child_weight=10, reg_lambda=2.0)
+RULES = dict(kickoff=True, set_pieces=True)   # reglas de balón parado tras el decodificador
 DECODER = dict(min_poss_s=2.0, min_dead_s=1.0, pen_team=12.0, pen_dead=40.0, temp=1.0)
