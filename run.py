@@ -1,6 +1,7 @@
 """Posesión H/A/D de BAR-ATH a partir del tracking automático. Un comando, determinista.
 
-    python run.py predict     # entrena con IDSSE (los 7 partidos) y escribe el CSV de entrega
+    python run.py predict     # usa el modelo guardado en model/ y escribe el CSV de entrega
+    python run.py train       # vuelve a entrenar el modelo con IDSSE (los 7 partidos) y lo guarda en model/
     python run.py validate    # spellF1 leave-one-match-out en IDSSE (evidencia de selección)
     python run.py public      # chequeo de sanidad del CSV con el GT público de 5 min (sin ajustar nada)
 """
@@ -34,11 +35,17 @@ def sha(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
+def train():
+    pl.CACHE.mkdir(exist_ok=True)
+    parts = pl.idsse_tables(pl.ball_masks())
+    model, prior, columns = pl.fit(parts)
+    meta = pl.save_model(model, prior, columns)
+    print('Modelo guardado en model/ (sha256 ' + meta['model_sha256'] + ')')
+
+
 def predict():
     pl.CACHE.mkdir(exist_ok=True)
-    masks = pl.ball_masks()
-    parts = pl.idsse_tables(masks)
-    model, prior, columns = pl.fit(parts)
+    model, prior, columns = pl.load_model()
     labels = np.full(ti.N_FRAMES, 'X', dtype='<U1')
     stats = []
     for half in pl.target_halves():
@@ -55,7 +62,8 @@ def predict():
     manifest = {'csv': CSV.name, 'sha256': sha(CSV), 'halves': stats, 'decoder': config.DECODER,
                 'control_s': config.CONTROL_S, 'aug_draws': config.AUG_DRAWS, 'train_stride': config.TRAIN_STRIDE,
                 'feature_variant': config.FEATURE_VARIANT, 'xgb': config.XGB, 'seed': config.SEED,
-                'training_matches': pl.idsse.MATCHES}
+                'training_matches': pl.idsse.MATCHES,
+                'model_sha256': json.loads((pl.MODEL / 'MODEL.json').read_text(encoding='utf-8'))['model_sha256']}
     (OUT / 'MANIFEST.json').write_text(json.dumps(manifest, indent=2), encoding='utf-8', newline='\n')
     print(json.dumps(manifest, indent=2))
 
@@ -102,5 +110,5 @@ def public():
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('command', choices=['predict', 'validate', 'public'])
-    {'predict': predict, 'validate': validate, 'public': public}[parser.parse_args().command]()
+    parser.add_argument('command', choices=['train', 'predict', 'validate', 'public'])
+    {'train': train, 'predict': predict, 'validate': validate, 'public': public}[parser.parse_args().command]()

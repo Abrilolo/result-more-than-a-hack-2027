@@ -1,4 +1,5 @@
 """Bloques comunes: datos, entrenamiento, predicción fuera de pliegue y puntuación de posesiones."""
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -18,6 +19,8 @@ import possession_metrics as pm  # noqa: E402
 
 CACHE = ROOT / 'cache'
 RAW = ROOT / 'external' / 'raw'
+IDSSE = ROOT / 'external' / 'idsse'   # partidos IDSSE ya procesados (se publican en el repo)
+MODEL = ROOT / 'model'
 from config import AUG_DRAWS, CONTROL_S, TRAIN_STRIDE, XGB, SEED, FEATURE_VARIANT  # noqa: E402
 
 
@@ -31,7 +34,7 @@ def idsse_tables(ball_masks, variant=FEATURE_VARIANT, draws=None):
     draws = AUG_DRAWS if draws is None else draws
     out = []
     for mi, match in enumerate(idsse.MATCHES):
-        for half in idsse.load(CACHE, RAW, match):
+        for half in idsse.load(IDSSE, RAW, match):
             for draw in range(draws):
                 suffix = f'_d{draw}' if draw else ''
                 path = CACHE / f'feat_{variant}_{match}_{half["half"]}{suffix}.npz'
@@ -125,3 +128,25 @@ def ball_masks():
 
 def target_features(half):
     return features.features(half)
+
+
+def save_model(model, prior, columns):
+    """Guarda el modelo entrenado y lo necesario para usarlo (proporción de clases, columnas)."""
+    MODEL.mkdir(exist_ok=True)
+    model.save_model(MODEL / 'model.ubj')
+    meta = {'prior': [float(v) for v in prior], 'columns': columns,
+            'model_sha256': hashlib.sha256((MODEL / 'model.ubj').read_bytes()).hexdigest()}
+    (MODEL / 'MODEL.json').write_text(json.dumps(meta, indent=2), encoding='utf-8', newline='\n')
+    return meta
+
+
+def load_model():
+    meta_path = MODEL / 'MODEL.json'
+    if not meta_path.exists():
+        raise FileNotFoundError('No hay modelo en model/: ejecuta primero `python run.py train`')
+    meta = json.loads(meta_path.read_text(encoding='utf-8'))
+    digest = hashlib.sha256((MODEL / 'model.ubj').read_bytes()).hexdigest()
+    assert digest == meta['model_sha256'], 'model/model.ubj no coincide con model/MODEL.json'
+    model = XGBClassifier()
+    model.load_model(MODEL / 'model.ubj')
+    return model, np.array(meta['prior']), meta['columns']

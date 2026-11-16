@@ -98,6 +98,7 @@ def load(cache_dir, raw_dir, match):
     """Lectura con caché; la caché es función pura de los XML públicos fijados."""
     path = Path(cache_dir) / f'idsse_{match}.npz'
     if not path.exists():
+        path.parent.mkdir(parents=True, exist_ok=True)
         download(raw_dir, match)
         np.savez_compressed(path, **parse(raw_dir, match))
     with np.load(path, allow_pickle=False) as z:

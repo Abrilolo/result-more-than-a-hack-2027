@@ -1,7 +1,7 @@
-# Datos del reto: licenciados, nunca se publican
+# Datos del reto: licenciados, nunca se publican (ni sus derivados)
 data/
-# Regenerables
 cache/
+# XML originales de IDSSE (2.5 GB): se descargan solos; las versiones procesadas sí se publican
 external/raw/
 .venv/
 __pycache__/

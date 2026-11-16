@@ -13,14 +13,12 @@ decisiones se tomaron con el **spellF1 leave-one-match-out sobre IDSSE**, nunca 
 del reto. Los 5 minutos públicos solo se usaron para comprobar que frames, etiquetas y formato
 del archivo son correctos.
 
-## 2. Datos usados, probados y descartados
+## 2. Datos usados y no usados
 
 | dato | uso |
 |---|---|
 | ATD táctico oficial (`BAR-ATH_tactical_atd.txt` + `.xml`: jugadores, equipo de cada slot, balón) | **usado** en todas las características; `src/target_inputs.py` lo pasa de coordenadas 0–1 a metros (105.3 × 68). El balón está presente en el 59 % de los frames evaluados |
-| Homografía táctica | no usada (el ATD ya está en coordenadas del campo) |
-| Salida del detector/tracker propio (`half_*.sqlite`) | **probada y descartada** para el balón: con score ≥ 0.3 solo el 57 % de las detecciones cae a menos de 2 m del balón ATD. Un subconjunto con soporte temporal y cercano a jugadores rellena solo el 13 % de los huecos del balón ATD y se equivoca (> 2 m) el 23 % de las veces. Mezclarlo mete valores atípicos para los que el modelo no fue entrenado. No forma parte de la entrega |
-| Pipeline anterior (jugadores re-proyectados desde detecciones propias, 5 Hz, 29 características, HMM) | sustituido. Tomaba la caja de balón con mayor score de cada frame sin asociación temporal, re-proyectaba jugadores en lugar de usar el ATD y decodificaba a 5 Hz |
+| Homografía táctica | no usada: el ATD ya está en coordenadas del campo |
 | Smart Tagging | no usado: no tiene equivalente en los datos de entrenamiento, así que su peso no se podía validar |
 | Vídeo y tracking de broadcast | no usados |
 
@@ -30,14 +28,23 @@ del archivo son correctos.
 |---|---|---|---|---|
 | `BAR-ATH_tactical_atd.txt` + `.xml` | paquete de datos oficial del reto | única entrada del partido: jugadores, equipo de cada slot y balón | `data/tactical/` (o `$MTAH_DATA_DIR/tactical/`) | **no** |
 | `cache/atd.npz` | se genera a partir de los dos archivos anteriores (`src/target_inputs.py`) | el mismo ATD en metros, para no releer el `.txt` | `cache/` | **no** (derivado del dato del reto) |
-| Partidos IDSSE (XML de DFL) | descarga automática de `pysport/idsse-data`, revisión fija `a715a38d` | entrenamiento y validación | `external/raw/` | no (son 2.5 GB y se descargan solos) |
-| Tablas de características IDSSE | se generan a partir de los XML anteriores | entrenamiento | `cache/` | no (regenerables) |
+| Partidos IDSSE originales (XML de DFL) | descarga automática de `pysport/idsse-data`, revisión fija `a715a38d` | origen de los datos de entrenamiento | `external/raw/` | no (2.5 GB; solo hacen falta si se borra `external/idsse/`) |
+| Partidos IDSSE procesados | `src/idsse.py` a partir de los XML anteriores: 25 Hz, metros, etiquetas DFL | entrenamiento y validación | `external/idsse/` (103 MB) | **sí** (CC BY 4.0, con atribución) |
+| Tablas de características IDSSE | IDSSE procesado, degradado con la máscara de disponibilidad del balón del reto | entrenamiento | `cache/` | no (llevan un patrón derivado del reto; se regeneran en unos minutos) |
+| Modelo entrenado | `run.py train` | inferencia | `model/model.ubj` (28 MB) + `model/MODEL.json` | **sí** |
 | GT público de 5 min | repositorio público del reto (`evaluation/gt/`) | solo `run.py public` | `reference/` | sí (ya es público) |
 | CSV de posesión | salida de `run.py predict` | la entrega | `prediction/` | sí |
 
-El flujo es: `data/tactical/` → `cache/atd.npz` → características → modelo entrenado solo con IDSSE
-→ decodificador → `prediction/Pitch_Controllers.csv`. El modelo se reentrena en cada ejecución de
-`predict` (no se guarda ningún modelo entrenado); por eso el repositorio solo contiene código.
+El flujo es:
+
+* `train`: `external/idsse/` + máscara del balón de `data/tactical/` → características degradadas
+  → XGBoost → `model/`.
+* `predict`: `data/tactical/` → `cache/atd.npz` → características → `model/` → decodificador →
+  `prediction/Pitch_Controllers.csv`.
+
+El repositorio publica el modelo entrenado y los partidos IDSSE procesados, así que se puede
+regenerar el CSV con nuestro modelo exacto (`predict`) o comprobar el entrenamiento desde cero
+(`train`, que produce el mismo `model.ubj`, mismo hash).
 
 **Por qué los datos del reto no están en el repositorio:** el reglamento prohíbe redistribuirlos
 («Do not redistribute the data», incluido subirlos a un repositorio público) y publicar derivados
@@ -123,8 +130,7 @@ partido y promediando entre partidos. Cada paso se conservó solo si mejoraba es
 
 Los parámetros del decodificador se eligieron sobre las mismas predicciones fuera de pliegue
 (posesión mínima 2 s, balón muerto mínimo 1 s, penalización por cambio de equipo 12,
-penalización vivo/muerto 40); los valores vecinos quedan a ±0.002. La fusión con las detecciones
-propias del balón se descartó antes de modelar (ver §2).
+penalización vivo/muerto 40); los valores vecinos quedan a ±0.002.
 
 ### Chequeo con el GT público (5 minutos, 7 500 frames)
 
@@ -164,8 +170,7 @@ Matriz de confusión (filas = GT, columnas = predicción) en los frames evaluado
 Lectura: el equipo en posesión se acierta bien, pero el sistema **predice menos posesiones de las
 reales y más largas**, sobre todo porque se pierde parte de los balones muertos (recall de D
 0.52). Es coherente con la validación en IDSSE, donde también predice el 88 % de las posesiones
-reales. Con el pipeline anterior el mismo chequeo daba spellF1 0.322, macroF1 0.591 y exactitud
-0.656. En el partido completo, el archivo final tiene 259 posesiones con una media de 14.3 s.
+reales. En el partido completo, el archivo final tiene 259 posesiones con una media de 14.3 s.
 
 ## 9. Limitaciones
 
@@ -175,11 +180,17 @@ reales. Con el pipeline anterior el mismo chequeo daba spellF1 0.322, macroF1 0.
 * Las posesiones cortas (< 6 s) se detectan con mucha menos fiabilidad que las largas.
 * El balón falta en el 41 % de los frames evaluados; durante los huecos largos la decisión
   depende de la forma colectiva y del estado del balón en los extremos del hueco.
-* Con más tiempo: un tracker de balón aprendido sobre las detecciones propias, y las
+* Con más tiempo: un detector propio del balón para cubrir los huecos del ATD, y las
   reanudaciones del Smart Tagging como información previa validada.
 
 ## 10. Reproducción
 
-Ver `README.md`: copiar `BAR-ATH_tactical_atd.txt` y `.xml` del paquete oficial en
-`data/tactical/`, ejecutar `setup.ps1` y después `python run.py predict`. Es determinista; el hash
-del CSV queda en `prediction/MANIFEST.json`.
+Ver `README.md`. Copiar `BAR-ATH_tactical_atd.txt` y `.xml` del paquete oficial en
+`data/tactical/` y ejecutar `setup.ps1`. Después:
+
+* `python run.py predict` regenera el CSV con el modelo publicado en `model/` (unos 30 s).
+* `python run.py train` reentrena con `external/idsse/` (unos 8 min) y produce el mismo
+  `model.ubj`; un `predict` posterior da el mismo CSV byte a byte.
+* `python run.py validate` repite la validación leave-one-match-out de §8 (unos 35 min).
+
+Los hashes del modelo y del CSV quedan en `model/MODEL.json` y `prediction/MANIFEST.json`.
